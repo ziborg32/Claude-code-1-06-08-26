@@ -4,17 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       prompt:
-        description: "Image prompt (leave empty if using task_id)"
+        description: "Image prompt (leave empty if using job_id)"
         required: false
         type: string
-      task_id:
-        description: "Existing Midjourney taskId to fetch instead of generating a new image"
+      job_id:
+        description: "Existing Apiframe jobId to fetch instead of generating a new image"
         required: false
         type: string
-      mode:
-        description: "Generation mode (ignored when task_id is set)"
+      aspect_ratio:
+        description: "Aspect ratio, e.g. 1:1, 16:9 (ignored when job_id is set)"
         required: false
-        default: "fast"
+        default: "1:1"
         type: string
 
 permissions:
@@ -39,10 +39,10 @@ jobs:
         env:
           MIDJOURNEY_API_KEY: ${{ secrets.MIDJOURNEY_API_KEY }}
         run: |
-          if [ -n "${{ inputs.task_id }}" ]; then
-            node scripts/generate-image.js --task-id "${{ inputs.task_id }}"
+          if [ -n "${{ inputs.job_id }}" ]; then
+            node scripts/generate-image.js --job-id "${{ inputs.job_id }}"
           else
-            node scripts/generate-image.js "${{ inputs.prompt }}" "${{ inputs.mode }}"
+            node scripts/generate-image.js "${{ inputs.prompt }}" "${{ inputs.aspect_ratio }}"
           fi
 
       - name: Commit and push generated image
@@ -53,6 +53,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new image to commit"
           else
-            git commit -m "Add generated image: ${{ inputs.task_id || inputs.prompt }}"
+            git commit -m "Add generated image: ${{ inputs.job_id || inputs.prompt }}"
             git push
           fi

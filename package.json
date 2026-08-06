@@ -1,15 +1,14 @@
 {
   "name": "claude-code-1-06-08-26",
   "version": "1.0.0",
-  "description": "Midjourney image generation via apiframe.pro, images saved to this repo",
+  "description": "Midjourney image generation via apiframe.ai, images saved to this repo",
   "private": true,
   "scripts": {
     "generate": "node scripts/generate-image.js"
   },
   "dependencies": {
+    "@apiframe-ai/sdk": "^2.0.0-beta.1",
     "axios": "^1.4.0",
-    "dotenv": "^16.4.5",
-    "form-data": "^4.0.0",
-    "midjourney-api": "^2.0.0"
+    "dotenv": "^16.4.5"
   }
 }

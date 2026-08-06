@@ -3,11 +3,9 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const MidjourneyAPI = require('midjourney-api');
+const { Apiframe } = require('@apiframe-ai/sdk');
 
 const IMAGES_DIR = path.join(__dirname, '..', 'images');
-const POLL_INTERVAL_MS = 5000;
-const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
 function slugify(text) {
   return text
@@ -17,34 +15,17 @@ function slugify(text) {
     .slice(0, 60);
 }
 
-function findImageUrl(result) {
-  return (
-    result.imageURL ||
-    result.imageUrl ||
-    result.originalImageURL ||
-    result.url ||
-    (Array.isArray(result.imageURLs) && result.imageURLs[0]) ||
-    (Array.isArray(result.images) && result.images[0]) ||
-    null
-  );
-}
-
-async function pollForResult(midjourney, taskId) {
-  const start = Date.now();
-  while (Date.now() - start < POLL_TIMEOUT_MS) {
-    const result = await midjourney.getResult(taskId);
-    const status = (result.status || '').toLowerCase();
-
-    if (status === 'finished' || status === 'done' || status === 'completed' || findImageUrl(result)) {
-      return result;
+function findImageUrls(value, found = []) {
+  if (typeof value === 'string') {
+    if (/^https?:\/\/\S+\.(png|jpe?g|webp)(\?\S*)?$/i.test(value)) {
+      found.push(value);
     }
-    if (status === 'failed' || status === 'error') {
-      throw new Error(`Job failed: ${JSON.stringify(result)}`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  } else if (Array.isArray(value)) {
+    value.forEach((item) => findImageUrls(item, found));
+  } else if (value && typeof value === 'object') {
+    Object.values(value).forEach((item) => findImageUrls(item, found));
   }
-  throw new Error(`Timed out waiting for task ${taskId} to finish`);
+  return found;
 }
 
 async function downloadImage(url, destPath) {
@@ -54,59 +35,74 @@ async function downloadImage(url, destPath) {
 }
 
 function parseArgs(argv) {
-  const taskIdFlagIndex = argv.findIndex((arg) => arg === '--task-id');
-  if (taskIdFlagIndex !== -1) {
-    return { taskId: argv[taskIdFlagIndex + 1] };
+  const jobIdFlagIndex = argv.findIndex((arg) => arg === '--job-id');
+  if (jobIdFlagIndex !== -1) {
+    return { jobId: argv[jobIdFlagIndex + 1] };
   }
-  const [prompt, mode = 'fast'] = argv;
-  return { prompt, mode };
+  const [prompt, aspectRatio = '1:1'] = argv;
+  return { prompt, aspectRatio };
 }
 
 async function main() {
-  const { prompt, mode, taskId } = parseArgs(process.argv.slice(2));
+  const { prompt, aspectRatio, jobId } = parseArgs(process.argv.slice(2));
 
-  if (!prompt && !taskId) {
-    console.error('Usage: node scripts/generate-image.js "<prompt>" [mode]');
-    console.error('   or: node scripts/generate-image.js --task-id <taskId>');
+  if (!prompt && !jobId) {
+    console.error('Usage: node scripts/generate-image.js "<prompt>" [aspectRatio]');
+    console.error('   or: node scripts/generate-image.js --job-id <jobId>');
     process.exit(1);
   }
 
   const apiKey = process.env.MIDJOURNEY_API_KEY;
   if (!apiKey) {
-    console.error('Missing MIDJOURNEY_API_KEY. Copy .env.example to .env and set your apiframe.pro key.');
+    console.error('Missing MIDJOURNEY_API_KEY. Copy .env.example to .env and set your apiframe.ai key.');
     process.exit(1);
   }
 
-  const midjourney = new MidjourneyAPI(apiKey, true);
+  const client = new Apiframe({ apiKey });
 
-  let resolvedTaskId = taskId;
-  let namePart = taskId;
+  let resolvedJobId = jobId;
+  let namePart = jobId;
 
-  if (!resolvedTaskId) {
-    console.log(`Submitting prompt: "${prompt}" (mode: ${mode})`);
-    const job = await midjourney.imagine(prompt, mode);
-    if (!job.taskId) {
-      throw new Error(`No taskId in response: ${JSON.stringify(job)}`);
-    }
-    resolvedTaskId = job.taskId;
+  if (!resolvedJobId) {
+    console.log(`Submitting prompt: "${prompt}" (aspect ratio: ${aspectRatio})`);
+    const job = await client.images.generate({
+      model: 'midjourney',
+      prompt,
+      midjourneyParams: { aspect_ratio: aspectRatio },
+    });
+    resolvedJobId = job.jobId;
     namePart = slugify(prompt);
+    console.log(`Job submitted (jobId: ${resolvedJobId}). Waiting for result...`);
+  } else {
+    console.log(`Waiting for existing job ${resolvedJobId}...`);
   }
 
-  console.log(`Polling for result of task ${resolvedTaskId}...`);
-  const result = await pollForResult(midjourney, resolvedTaskId);
+  const job = await client.jobs.waitFor(resolvedJobId, {
+    onProgress: (j) => console.log(`${j.status} ${j.progress ?? ''}`.trim()),
+  });
 
-  const imageUrl = findImageUrl(result);
-  if (!imageUrl) {
-    throw new Error(`Could not find an image URL in result: ${JSON.stringify(result)}`);
+  if (job.status === 'FAILED') {
+    throw new Error(`Job failed: ${job.error || JSON.stringify(job)}`);
   }
 
-  const filename = `${Date.now()}-${namePart}.png`;
-  const destPath = path.join(IMAGES_DIR, filename);
+  console.log('Job result:', JSON.stringify(job.result, null, 2));
 
-  console.log(`Downloading image to ${destPath}`);
-  await downloadImage(imageUrl, destPath);
+  const imageUrls = findImageUrls(job.result);
+  if (imageUrls.length === 0) {
+    throw new Error(`Could not find an image URL in result: ${JSON.stringify(job.result)}`);
+  }
 
-  console.log(`Done: ${destPath}`);
+  const savedPaths = [];
+  for (let i = 0; i < imageUrls.length; i += 1) {
+    const suffix = imageUrls.length > 1 ? `-${i + 1}` : '';
+    const filename = `${Date.now()}-${namePart}${suffix}.png`;
+    const destPath = path.join(IMAGES_DIR, filename);
+    console.log(`Downloading image to ${destPath}`);
+    await downloadImage(imageUrls[i], destPath);
+    savedPaths.push(destPath);
+  }
+
+  console.log(`Done: ${savedPaths.join(', ')}`);
 }
 
 main().catch((error) => {
