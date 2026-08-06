@@ -1,0 +1,49 @@
+name: Generate Midjourney Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Image prompt"
+        required: true
+        type: string
+      mode:
+        description: "Generation mode"
+        required: false
+        default: "fast"
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate image
+        env:
+          MIDJOURNEY_API_KEY: ${{ secrets.MIDJOURNEY_API_KEY }}
+        run: node scripts/generate-image.js "${{ inputs.prompt }}" "${{ inputs.mode }}"
+
+      - name: Commit and push generated image
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add images/
+          if git diff --cached --quiet; then
+            echo "No new image to commit"
+          else
+            git commit -m "Add generated image: ${{ inputs.prompt }}"
+            git push
+          fi
