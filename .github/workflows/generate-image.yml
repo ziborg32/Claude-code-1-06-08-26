@@ -4,11 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       prompt:
-        description: "Image prompt"
-        required: true
+        description: "Image prompt (leave empty if using task_id)"
+        required: false
+        type: string
+      task_id:
+        description: "Existing Midjourney taskId to fetch instead of generating a new image"
+        required: false
         type: string
       mode:
-        description: "Generation mode"
+        description: "Generation mode (ignored when task_id is set)"
         required: false
         default: "fast"
         type: string
@@ -34,7 +38,12 @@ jobs:
       - name: Generate image
         env:
           MIDJOURNEY_API_KEY: ${{ secrets.MIDJOURNEY_API_KEY }}
-        run: node scripts/generate-image.js "${{ inputs.prompt }}" "${{ inputs.mode }}"
+        run: |
+          if [ -n "${{ inputs.task_id }}" ]; then
+            node scripts/generate-image.js --task-id "${{ inputs.task_id }}"
+          else
+            node scripts/generate-image.js "${{ inputs.prompt }}" "${{ inputs.mode }}"
+          fi
 
       - name: Commit and push generated image
         run: |
@@ -44,6 +53,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new image to commit"
           else
-            git commit -m "Add generated image: ${{ inputs.prompt }}"
+            git commit -m "Add generated image: ${{ inputs.task_id || inputs.prompt }}"
             git push
           fi

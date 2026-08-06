@@ -53,11 +53,21 @@ async function downloadImage(url, destPath) {
   fs.writeFileSync(destPath, response.data);
 }
 
-async function main() {
-  const [prompt, mode = 'fast'] = process.argv.slice(2);
+function parseArgs(argv) {
+  const taskIdFlagIndex = argv.findIndex((arg) => arg === '--task-id');
+  if (taskIdFlagIndex !== -1) {
+    return { taskId: argv[taskIdFlagIndex + 1] };
+  }
+  const [prompt, mode = 'fast'] = argv;
+  return { prompt, mode };
+}
 
-  if (!prompt) {
+async function main() {
+  const { prompt, mode, taskId } = parseArgs(process.argv.slice(2));
+
+  if (!prompt && !taskId) {
     console.error('Usage: node scripts/generate-image.js "<prompt>" [mode]');
+    console.error('   or: node scripts/generate-image.js --task-id <taskId>');
     process.exit(1);
   }
 
@@ -69,21 +79,28 @@ async function main() {
 
   const midjourney = new MidjourneyAPI(apiKey, true);
 
-  console.log(`Submitting prompt: "${prompt}" (mode: ${mode})`);
-  const job = await midjourney.imagine(prompt, mode);
-  if (!job.taskId) {
-    throw new Error(`No taskId in response: ${JSON.stringify(job)}`);
+  let resolvedTaskId = taskId;
+  let namePart = taskId;
+
+  if (!resolvedTaskId) {
+    console.log(`Submitting prompt: "${prompt}" (mode: ${mode})`);
+    const job = await midjourney.imagine(prompt, mode);
+    if (!job.taskId) {
+      throw new Error(`No taskId in response: ${JSON.stringify(job)}`);
+    }
+    resolvedTaskId = job.taskId;
+    namePart = slugify(prompt);
   }
 
-  console.log(`Task submitted (taskId: ${job.taskId}). Polling for result...`);
-  const result = await pollForResult(midjourney, job.taskId);
+  console.log(`Polling for result of task ${resolvedTaskId}...`);
+  const result = await pollForResult(midjourney, resolvedTaskId);
 
   const imageUrl = findImageUrl(result);
   if (!imageUrl) {
     throw new Error(`Could not find an image URL in result: ${JSON.stringify(result)}`);
   }
 
-  const filename = `${Date.now()}-${slugify(prompt)}.png`;
+  const filename = `${Date.now()}-${namePart}.png`;
   const destPath = path.join(IMAGES_DIR, filename);
 
   console.log(`Downloading image to ${destPath}`);
