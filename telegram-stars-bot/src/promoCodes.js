@@ -1,19 +1,14 @@
-// Коды берутся из переменной окружения PROMO_CODES (через запятую) и хранятся в памяти.
-// При каждом перезапуске/передеплое список загружается заново из переменной —
-// поэтому уже выданные коды нужно самостоятельно убирать из PROMO_CODES,
-// иначе после рестарта один и тот же код может быть выдан повторно.
-// Для настоящего продакшена коды и факт выдачи должны храниться во внешней БД.
-let codes = (process.env.PROMO_CODES || '')
-  .split(',')
-  .map((c) => c.trim())
-  .filter(Boolean);
+// Один многоразовый промокод из переменной окружения PROMO_CODE.
+// Выдаётся всем покупателям одинаковый — если понадобятся уникальные
+// одноразовые коды на каждого покупателя, нужна другая схема (список + БД).
+const CODE = process.env.PROMO_CODE || '';
 
 function takeCode() {
-  return codes.shift();
+  return CODE || undefined;
 }
 
 function remainingCount() {
-  return codes.length;
+  return CODE ? Infinity : 0;
 }
 
 module.exports = { takeCode, remainingCount };
