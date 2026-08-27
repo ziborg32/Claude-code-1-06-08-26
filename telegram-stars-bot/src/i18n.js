@@ -5,9 +5,9 @@ const DEFAULTS = {
   ru: {
     offer: 'Промокод на подписку на {product} ({period}) ⭐️\n\nЦена: {price} Stars',
     buyButton: 'GET LINK!',
-    invoiceTitle: 'Промокод: {product} ({period})',
-    invoiceDescription: 'Промокод для активации подписки на {product} ({period})',
-    payLabel: 'Промокод: {product} ({period})',
+    invoiceTitle: '{product}',
+    invoiceDescription: '{period}',
+    payLabel: '{product} ({period})',
     productUnavailable: 'Товар недоступен, оплата отменена',
     soldOut: 'Промокоды закончились. Попробуйте позже или напишите в поддержку.',
     thanks:
@@ -16,9 +16,9 @@ const DEFAULTS = {
   en: {
     offer: 'Subscription promo code for {product} ({period}) ⭐️\n\nPrice: {price} Stars',
     buyButton: 'GET LINK!',
-    invoiceTitle: 'Promo code: {product} ({period})',
-    invoiceDescription: 'Activation promo code for a {product} subscription ({period})',
-    payLabel: 'Promo code: {product} ({period})',
+    invoiceTitle: '{product}',
+    invoiceDescription: '{period}',
+    payLabel: '{product} ({period})',
     productUnavailable: 'Product unavailable, payment cancelled',
     soldOut: 'Promo codes are sold out. Please try again later or contact support.',
     thanks:
