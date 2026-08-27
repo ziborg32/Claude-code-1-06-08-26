@@ -1,84 +1,84 @@
 const { Telegraf } = require('telegraf');
 const { message } = require('telegraf/filters');
-const { PRODUCTS } = require('./products');
+const { PRODUCT } = require('./products');
+const { getLocale } = require('./i18n');
+const { takeCode, remainingCount } = require('./promoCodes');
 
-// chargeId -> { userId, productId, amount } — для демо-команды /refund.
+// chargeId -> { userId, amount } — для демо-команды /refund.
 // В проде вместо Map нужна настоящая БД, т.к. память бота обнуляется при рестарте.
 const purchases = new Map();
-
-function buildCatalogKeyboard() {
-  return {
-    inline_keyboard: PRODUCTS.map((p) => [
-      { text: `${p.title} — ${p.priceStars} ⭐️`, callback_data: `buy:${p.id}` },
-    ]),
-  };
-}
 
 function createBot(token) {
   const bot = new Telegraf(token);
 
   bot.start((ctx) => {
-    ctx.reply(
-      'Привет! Здесь можно купить товары за Telegram Stars ⭐️\n\nВыберите товар:',
-      { reply_markup: buildCatalogKeyboard() }
-    );
-  });
-
-  bot.command('shop', (ctx) => {
-    ctx.reply('Каталог:', { reply_markup: buildCatalogKeyboard() });
+    const t = getLocale(ctx.from.language_code);
+    ctx.reply(t.offer, {
+      reply_markup: {
+        inline_keyboard: [[{ text: t.buyButton, callback_data: `buy:${PRODUCT.id}` }]],
+      },
+    });
   });
 
   bot.action(/^buy:(.+)$/, async (ctx) => {
-    const product = PRODUCTS.find((p) => p.id === ctx.match[1]);
-    if (!product) {
-      await ctx.answerCbQuery('Товар не найден');
+    const t = getLocale(ctx.from.language_code);
+    if (ctx.match[1] !== PRODUCT.id) {
+      await ctx.answerCbQuery(t.productUnavailable);
       return;
     }
     await ctx.answerCbQuery();
     await ctx.sendInvoice({
       chat_id: ctx.chat.id,
-      title: product.title,
-      description: product.description,
-      payload: `product:${product.id}`,
+      title: t.invoiceTitle,
+      description: t.invoiceDescription,
+      payload: `product:${PRODUCT.id}`,
       provider_token: '', // для Stars provider_token всегда пустая строка
       currency: 'XTR',
-      prices: [{ label: product.title, amount: product.priceStars }],
+      prices: [{ label: t.payLabel, amount: PRODUCT.priceStars }],
     });
   });
 
   // Telegram даёт 10 секунд на ответ, иначе платёж отменяется автоматически.
   bot.on('pre_checkout_query', async (ctx) => {
+    const t = getLocale(ctx.from.language_code);
     const productId = ctx.preCheckoutQuery.invoice_payload.replace('product:', '');
-    const product = PRODUCTS.find((p) => p.id === productId);
-    if (!product) {
-      await ctx.answerPreCheckoutQuery(false, 'Товар недоступен, оплата отменена');
+    if (productId !== PRODUCT.id) {
+      await ctx.answerPreCheckoutQuery(false, t.productUnavailable);
+      return;
+    }
+    if (remainingCount() === 0) {
+      await ctx.answerPreCheckoutQuery(false, t.soldOut);
       return;
     }
     await ctx.answerPreCheckoutQuery(true);
   });
 
   bot.on(message('successful_payment'), async (ctx) => {
+    const t = getLocale(ctx.from.language_code);
     const payment = ctx.message.successful_payment;
-    const productId = payment.invoice_payload.replace('product:', '');
-    const product = PRODUCTS.find((p) => p.id === productId);
+    const code = takeCode();
 
     purchases.set(payment.telegram_payment_charge_id, {
       userId: ctx.from.id,
-      productId,
       amount: payment.total_amount,
     });
 
     console.log('Успешная оплата:', {
       user: ctx.from.id,
-      product: productId,
       stars: payment.total_amount,
       chargeId: payment.telegram_payment_charge_id,
+      codeIssued: Boolean(code),
+      codesLeft: remainingCount(),
     });
 
-    await ctx.reply(
-      `Спасибо за покупку «${product ? product.title : productId}»! ⭐️\n` +
-        `Оплата на ${payment.total_amount} Stars прошла успешно.`
-    );
+    if (!code) {
+      // Деньги уже списаны, а выдать нечего — такое нельзя оставлять молча.
+      console.error('ВНИМАНИЕ: промокоды закончились, но оплата прошла. chargeId:', payment.telegram_payment_charge_id);
+      await ctx.reply(t.soldOut);
+      return;
+    }
+
+    await ctx.reply(t.thanks(code));
   });
 
   // Демо-команда для владельца бота: /refund <telegram_payment_charge_id>
