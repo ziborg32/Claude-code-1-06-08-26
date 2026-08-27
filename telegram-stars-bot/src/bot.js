@@ -1,7 +1,7 @@
 const { Telegraf } = require('telegraf');
 const { message } = require('telegraf/filters');
 const { PRODUCT } = require('./products');
-const { getLocale } = require('./i18n');
+const { getLocale, getPeriod } = require('./i18n');
 const { takeCode, remainingCount } = require('./promoCodes');
 
 // chargeId -> { userId, amount } — для демо-команды /refund.
@@ -13,7 +13,8 @@ function createBot(token) {
 
   bot.start((ctx) => {
     const t = getLocale(ctx.from.language_code);
-    ctx.reply(t.offer, {
+    const period = getPeriod(ctx.from.language_code);
+    ctx.reply(t.offer(period, PRODUCT.priceStars), {
       reply_markup: {
         inline_keyboard: [[{ text: t.buyButton, callback_data: `buy:${PRODUCT.id}` }]],
       },
@@ -22,6 +23,7 @@ function createBot(token) {
 
   bot.action(/^buy:(.+)$/, async (ctx) => {
     const t = getLocale(ctx.from.language_code);
+    const period = getPeriod(ctx.from.language_code);
     if (ctx.match[1] !== PRODUCT.id) {
       await ctx.answerCbQuery(t.productUnavailable);
       return;
@@ -29,12 +31,12 @@ function createBot(token) {
     await ctx.answerCbQuery();
     await ctx.sendInvoice({
       chat_id: ctx.chat.id,
-      title: t.invoiceTitle,
-      description: t.invoiceDescription,
+      title: t.invoiceTitle(period),
+      description: t.invoiceDescription(period),
       payload: `product:${PRODUCT.id}`,
       provider_token: '', // для Stars provider_token всегда пустая строка
       currency: 'XTR',
-      prices: [{ label: t.payLabel, amount: PRODUCT.priceStars }],
+      prices: [{ label: t.payLabel(period), amount: PRODUCT.priceStars }],
     });
   });
 
@@ -55,6 +57,7 @@ function createBot(token) {
 
   bot.on(message('successful_payment'), async (ctx) => {
     const t = getLocale(ctx.from.language_code);
+    const period = getPeriod(ctx.from.language_code);
     const payment = ctx.message.successful_payment;
     const code = takeCode();
 
@@ -78,7 +81,7 @@ function createBot(token) {
       return;
     }
 
-    await ctx.reply(t.thanks(code));
+    await ctx.reply(t.thanks(code, period));
   });
 
   // Демо-команда для владельца бота: /refund <telegram_payment_charge_id>
