@@ -5,6 +5,10 @@ const DEFAULTS = {
   ru: {
     offer: 'Промокод на подписку на {product} ({period}) ⭐️\n\nЦена: {price} Stars',
     buyButton: 'GET LINK!',
+    cardButton: '💳 Карта / Крипта — ${priceUsd}',
+    payLinkText: 'Нажмите кнопку ниже, чтобы оплатить картой или криптовалютой:',
+    payLinkButton: 'Оплатить',
+    cardPaymentUnavailable: 'Оплата картой/криптой временно недоступна, попробуйте позже.',
     invoiceTitle: '{product}',
     invoiceDescription: '{period}',
     payLabel: '{product} ({period})',
@@ -16,6 +20,10 @@ const DEFAULTS = {
   en: {
     offer: 'Subscription promo code for {product} ({period}) ⭐️\n\nPrice: {price} Stars',
     buyButton: 'GET LINK!',
+    cardButton: '💳 Card / Crypto — ${priceUsd}',
+    payLinkText: 'Tap the button below to pay by card or cryptocurrency:',
+    payLinkButton: 'Pay',
+    cardPaymentUnavailable: 'Card/crypto payment is temporarily unavailable, please try again later.',
     invoiceTitle: '{product}',
     invoiceDescription: '{period}',
     payLabel: '{product} ({period})',
@@ -30,6 +38,10 @@ const DEFAULTS = {
 const ENV_KEYS = {
   offer: 'OFFER_TEXT',
   buyButton: 'BUY_BUTTON',
+  cardButton: 'CARD_BUTTON',
+  payLinkText: 'PAY_LINK_TEXT',
+  payLinkButton: 'PAY_LINK_BUTTON',
+  cardPaymentUnavailable: 'CARD_PAYMENT_UNAVAILABLE',
   invoiceTitle: 'INVOICE_TITLE',
   invoiceDescription: 'INVOICE_DESCRIPTION',
   payLabel: 'PAY_LABEL',
@@ -59,8 +71,12 @@ function getTemplate(field, languageCode) {
 function getLocale(languageCode) {
   return {
     buyButton: getTemplate('buyButton', languageCode),
+    payLinkButton: getTemplate('payLinkButton', languageCode),
     productUnavailable: DEFAULTS[pickLang(languageCode)].productUnavailable,
     soldOut: getTemplate('soldOut', languageCode),
+    cardPaymentUnavailable: getTemplate('cardPaymentUnavailable', languageCode),
+    cardButton: (vars) => render(getTemplate('cardButton', languageCode), vars),
+    payLinkText: (vars) => render(getTemplate('payLinkText', languageCode), vars),
     offer: (vars) => render(getTemplate('offer', languageCode), vars),
     invoiceTitle: (vars) => render(getTemplate('invoiceTitle', languageCode), vars),
     invoiceDescription: (vars) => render(getTemplate('invoiceDescription', languageCode), vars),

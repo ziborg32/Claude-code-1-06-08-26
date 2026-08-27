@@ -3,16 +3,25 @@ const { message } = require('telegraf/filters');
 const { PRODUCT } = require('./products');
 const { getLocale, getPeriod, getProductName } = require('./i18n');
 const { takeCode, remainingCount } = require('./promoCodes');
+const cryptomus = require('./cryptomus');
+const { pendingOrders, createOrderId } = require('./pendingOrders');
 
 // chargeId -> { userId, amount } — для демо-команды /refund.
 // В проде вместо Map нужна настоящая БД, т.к. память бота обнуляется при рестарте.
 const purchases = new Map();
+
+function cardPaymentEnabled() {
+  return Boolean(
+    process.env.CRYPTOMUS_MERCHANT_ID && process.env.CRYPTOMUS_API_KEY && process.env.PUBLIC_URL
+  );
+}
 
 function buildVars(languageCode, extra) {
   return {
     product: getProductName(languageCode),
     period: getPeriod(languageCode),
     price: PRODUCT.priceStars,
+    priceUsd: PRODUCT.priceUsd,
     ...extra,
   };
 }
@@ -23,11 +32,11 @@ function createBot(token) {
   bot.start((ctx) => {
     const t = getLocale(ctx.from.language_code);
     const vars = buildVars(ctx.from.language_code);
-    ctx.reply(t.offer(vars), {
-      reply_markup: {
-        inline_keyboard: [[{ text: t.buyButton, callback_data: `buy:${PRODUCT.id}` }]],
-      },
-    });
+    const keyboard = [[{ text: t.buyButton, callback_data: `buy:${PRODUCT.id}` }]];
+    if (cardPaymentEnabled()) {
+      keyboard.push([{ text: t.cardButton(vars), callback_data: `buy_card:${PRODUCT.id}` }]);
+    }
+    ctx.reply(t.offer(vars), { reply_markup: { inline_keyboard: keyboard } });
   });
 
   bot.action(/^buy:(.+)$/, async (ctx) => {
@@ -47,6 +56,33 @@ function createBot(token) {
       currency: 'XTR',
       prices: [{ label: t.payLabel(vars), amount: PRODUCT.priceStars }],
     });
+  });
+
+  // Оплата картой/криптой через Cryptomus — отдельный поток, не через Telegram Payments.
+  bot.action(/^buy_card:(.+)$/, async (ctx) => {
+    const t = getLocale(ctx.from.language_code);
+    const vars = buildVars(ctx.from.language_code);
+    if (ctx.match[1] !== PRODUCT.id || !cardPaymentEnabled()) {
+      await ctx.answerCbQuery(t.cardPaymentUnavailable);
+      return;
+    }
+    await ctx.answerCbQuery();
+
+    const orderId = createOrderId();
+    try {
+      const paymentUrl = await cryptomus.createInvoice({
+        orderId,
+        amountUsd: PRODUCT.priceUsd,
+        callbackUrl: `${process.env.PUBLIC_URL}/cryptomus/webhook`,
+      });
+      pendingOrders.set(orderId, { chatId: ctx.chat.id, languageCode: ctx.from.language_code });
+      await ctx.reply(t.payLinkText(vars), {
+        reply_markup: { inline_keyboard: [[{ text: t.payLinkButton, url: paymentUrl }]] },
+      });
+    } catch (err) {
+      console.error('Ошибка создания счёта Cryptomus:', err);
+      await ctx.reply(t.cardPaymentUnavailable);
+    }
   });
 
   // Telegram даёт 10 секунд на ответ, иначе платёж отменяется автоматически.
